@@ -1,0 +1,38 @@
+CREATE TABLE public.businesses (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL DEFAULT 'Mi taller', logo_path text);
+GRANT SELECT, UPDATE ON public.businesses TO authenticated;
+GRANT ALL ON public.businesses TO service_role;
+ALTER TABLE public.businesses ENABLE ROW LEVEL SECURITY;
+CREATE TABLE public.profiles (id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, business_id uuid NOT NULL REFERENCES public.businesses(id), name text NOT NULL DEFAULT '', email text NOT NULL, avatar_path text);
+GRANT SELECT ON public.profiles TO authenticated;
+GRANT UPDATE(name, avatar_path) ON public.profiles TO authenticated;
+GRANT ALL ON public.profiles TO service_role;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE TABLE public.user_roles (user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, business_id uuid NOT NULL REFERENCES public.businesses(id), role text NOT NULL DEFAULT 'vendedor' CHECK(role IN ('admin','vendedor','taller')), active boolean NOT NULL DEFAULT true, sales boolean NOT NULL DEFAULT true, costs boolean NOT NULL DEFAULT false, inventory boolean NOT NULL DEFAULT false);
+GRANT SELECT ON public.user_roles TO authenticated;
+GRANT ALL ON public.user_roles TO service_role;
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+CREATE TABLE public.invitations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), business_id uuid NOT NULL REFERENCES public.businesses(id), email text NOT NULL, name text NOT NULL DEFAULT '', role text NOT NULL CHECK(role IN ('admin','vendedor','taller')), sales boolean NOT NULL DEFAULT true, costs boolean NOT NULL DEFAULT false, inventory boolean NOT NULL DEFAULT false, accepted_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(business_id,email));
+GRANT SELECT ON public.invitations TO authenticated;
+GRANT ALL ON public.invitations TO service_role;
+ALTER TABLE public.invitations ENABLE ROW LEVEL SECURITY;
+CREATE FUNCTION public.my_business() RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$ SELECT business_id FROM public.user_roles WHERE user_id=auth.uid() AND active $$;
+CREATE FUNCTION public.business_admin() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$ SELECT EXISTS(SELECT 1 FROM public.user_roles WHERE user_id=auth.uid() AND active AND role='admin') $$;
+REVOKE ALL ON FUNCTION public.my_business(),public.business_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.my_business(),public.business_admin() TO authenticated,service_role;
+CREATE POLICY business_read ON public.businesses FOR SELECT TO authenticated USING(id=public.my_business());
+CREATE POLICY business_edit ON public.businesses FOR UPDATE TO authenticated USING(id=public.my_business() AND public.business_admin()) WITH CHECK(id=public.my_business() AND public.business_admin());
+CREATE POLICY profile_read ON public.profiles FOR SELECT TO authenticated USING(id=auth.uid() OR (business_id=public.my_business() AND public.business_admin()));
+CREATE POLICY profile_edit ON public.profiles FOR UPDATE TO authenticated USING(id=auth.uid()) WITH CHECK(id=auth.uid());
+CREATE POLICY role_read ON public.user_roles FOR SELECT TO authenticated USING(user_id=auth.uid() OR (business_id=public.my_business() AND public.business_admin()));
+CREATE POLICY invitation_read ON public.invitations FOR SELECT TO authenticated USING(business_id=public.my_business() AND public.business_admin());
+CREATE FUNCTION public.create_account_profile() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE b uuid; inv public.invitations;
+BEGIN
+SELECT * INTO inv FROM public.invitations WHERE lower(email)=lower(NEW.email) AND accepted_at IS NULL ORDER BY created_at DESC LIMIT 1 FOR UPDATE;
+IF inv.id IS NOT NULL THEN b:=inv.business_id;
+ELSE INSERT INTO public.businesses(name) VALUES('Mi taller') RETURNING id INTO b; END IF;
+INSERT INTO public.profiles(id,business_id,name,email) VALUES(NEW.id,b,coalesce(NEW.raw_user_meta_data->>'name',inv.name,''),NEW.email);
+INSERT INTO public.user_roles(user_id,business_id,role,sales,costs,inventory) VALUES(NEW.id,b,coalesce(inv.role,'admin'),coalesce(inv.sales,true),coalesce(inv.costs,true),coalesce(inv.inventory,true));
+IF inv.id IS NOT NULL THEN UPDATE public.invitations SET accepted_at=now() WHERE id=inv.id; END IF;
+RETURN NEW; END $$;
+CREATE TRIGGER account_profile_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.create_account_profile();

@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791833399294,
+      "tag": "0000_business_accounts_and_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791833433365,
+      "tag": "0001_brand_avatar_storage_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791833896193,
+      "tag": "0002_calculator_business_names",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791836091095,
+      "tag": "0003_shared_inventory",
+      "breakpoints": true
+    }
+  ]
+}

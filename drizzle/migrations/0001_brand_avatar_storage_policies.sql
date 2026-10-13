@@ -1,0 +1,3 @@
+CREATE POLICY assets_read ON storage.objects FOR SELECT TO authenticated USING(bucket_id='brand-avatars' AND ((storage.foldername(name))[1]=auth.uid()::text OR (storage.foldername(name))[1]=public.my_business()::text));
+CREATE POLICY assets_insert ON storage.objects FOR INSERT TO authenticated WITH CHECK(bucket_id='brand-avatars' AND ((storage.foldername(name))[1]=auth.uid()::text OR ((storage.foldername(name))[1]=public.my_business()::text AND public.business_admin())));
+CREATE POLICY assets_delete ON storage.objects FOR DELETE TO authenticated USING(bucket_id='brand-avatars' AND ((storage.foldername(name))[1]=auth.uid()::text OR ((storage.foldername(name))[1]=public.my_business()::text AND public.business_admin())));
